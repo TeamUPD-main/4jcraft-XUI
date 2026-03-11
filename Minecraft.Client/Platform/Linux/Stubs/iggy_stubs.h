@@ -221,7 +221,7 @@ RADEXPFUNC inline void RADEXPLINK IggyInstallPerfmon(void *perfmon) {
   STUBBED;
 }
 
-// GDraw memory/warning functions are defined in gdraw_glfw.c (C linkage)
+// GDraw memory/warning functions are defined in gdraw_glfw.c (now gdraw_sdl) (C linkage)
 // Juicey you stupid idiot do NOT define them here 
 
 #endif // IGGYSTUBS_H
