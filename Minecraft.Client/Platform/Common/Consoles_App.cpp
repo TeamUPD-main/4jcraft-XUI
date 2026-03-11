@@ -4237,7 +4237,24 @@ namespace {
 
 	void CMinecraftApp::loadStringTable()
 	{
-		#ifndef _XBOX
+		// we need to unload the current string table, this is a reload
+		delete m_stringTable;
+	}
+	std::wstring localisationFile = L"languages.loc";
+	if (m_mediaArchive->hasFile(localisationFile))
+	{
+		byteArray locFile = m_mediaArchive->getFile(localisationFile);
+		m_stringTable = new StringTable(locFile.data, locFile.length);
+		delete[] locFile.data;
+	}
+	else
+	{
+		m_stringTable = NULL;
+		assert(false);
+		// AHHHHHHHHH.
+	}
+#endif
+}
 
 		if(m_stringTable!=NULL)
 		{
