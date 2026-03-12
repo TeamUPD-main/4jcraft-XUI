@@ -322,15 +322,15 @@ ColourTable::ColourTable(PBYTE pbData, DWORD dwLength)
 // default ctor: initialize to safe default values
 ColourTable::ColourTable()
 {
-	for (int i = 0; i < (int)eMinecraftColour_COUNT; ++i)
-		m_colourValues[i] = 0;
+    // i cast memset spell
+    memset(m_colourValues, 0, sizeof(m_colourValues));
 }
 
 ColourTable::ColourTable(ColourTable *defaultColours, PBYTE pbData, DWORD dwLength)
 {
-	// 4J Stu - Default the colours that of the table passed in
-	XMemCpy( (void *)m_colourValues, (void *)defaultColours->m_colourValues, sizeof(int) * eMinecraftColour_COUNT);
-	loadColoursFromData(pbData, dwLength);
+    // 4J Stu - Default the colours that of the table passed in
+    XMemCpy((void *)m_colourValues, (void *)defaultColours->m_colourValues, sizeof(int) * eMinecraftColour_COUNT);
+    loadColoursFromData(pbData, dwLength);
 }
 void ColourTable::loadColoursFromData(PBYTE pbData, DWORD dwLength)
 {
