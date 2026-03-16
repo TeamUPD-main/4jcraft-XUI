@@ -87,36 +87,6 @@
 #define XUI_DISCARD_FONTS 1
 #endif
 
-#ifndef MAXULONG_PTR
-#define MAXULONG_PTR ((ULONG_PTR)~(ULONG_PTR)0)
-#endif
-
-struct D3DXVECTOR3
-{
-    float x;
-    float y;
-    float z;
-
-    D3DXVECTOR3() : x(0.0f), y(0.0f), z(0.0f) {}
-    D3DXVECTOR3(float xx, float yy, float zz) : x(xx), y(yy), z(zz) {}
-};
-
-struct D3DXMATRIX
-{
-    float _11, _12, _13, _14;
-    float _21, _22, _23, _24;
-    float _31, _32, _33, _34;
-    float _41, _42, _43, _44;
-
-    D3DXMATRIX()
-        : _11(1), _12(0), _13(0), _14(0),
-          _21(0), _22(1), _23(0), _24(0),
-          _31(0), _32(0), _33(1), _34(0),
-          _41(0), _42(0), _43(0), _44(1)
-    {
-    }
-};
-
 struct XUIRect
 {
     float left;
@@ -161,8 +131,8 @@ struct XUINotifyPress
 
 struct XUIMessageControlNavigate
 {
-    void* hObjSource;
-    void* hObjDest;
+    HXUIOBJ hObjSource;
+    HXUIOBJ hObjDest;
     int nControlNavigate;
 };
 
@@ -181,24 +151,6 @@ struct TypefaceDescriptor
 
 namespace LinuxXui
 {
-    struct Object;
-    struct SceneHost;
-    struct Resource;
-    struct Timer;
-
-    enum class ObjectKind
-    {
-        Generic,
-        Scene,
-        Container,
-        Text,
-        Button,
-        Custom
-    };
-
-    using HXUIOBJ = Object*;
-    using SceneCreateFn = std::function<SceneHost*(HXUIOBJ)>;
-
     struct SceneHost
     {
         virtual ~SceneHost() {}
@@ -214,58 +166,17 @@ namespace LinuxXui
         virtual void OnDestroy() {}
     };
 
-    struct Object
+    enum class ObjectKind
     {
-        ObjectKind kind;
-        std::wstring id;
-        std::wstring text;
-        std::wstring locator;
-        std::wstring sceneFile;
-        bool visible;
-        bool enabled;
-        bool isScene;
-        bool stayVisible;
-
-        float width;
-        float height;
-
-        D3DXVECTOR3 position;
-        D3DXVECTOR3 scale;
-        D3DXVECTOR3 pivot;
-
-        Object* parent;
-        Object* backScene;
-        std::vector<Object*> children;
-
-        std::unique_ptr<SceneHost> host;
-        void* userData;
-
-        Object()
-            : kind(ObjectKind::Generic),
-              visible(true),
-              enabled(true),
-              isScene(false),
-              stayVisible(false),
-              width(0.0f),
-              height(0.0f),
-              position(),
-              scale(1.0f, 1.0f, 1.0f),
-              pivot(),
-              parent(NULL),
-              backScene(NULL),
-              userData(NULL)
-        {
-        }
+        Generic,
+        Scene,
+        Container,
+        Text,
+        Button,
+        Custom
     };
 
-    struct Resource
-    {
-        std::wstring locator;
-        std::vector<std::uint8_t> data;
-        bool isMemoryResource;
-
-        Resource() : isMemoryResource(true) {}
-    };
+    using SceneCreateFn = std::function<SceneHost*(HXUIOBJ)>;
 
     struct Timer
     {
@@ -281,18 +192,6 @@ namespace LinuxXui
     inline std::unordered_map<std::wstring, SceneCreateFn>& SceneRegistry()
     {
         static std::unordered_map<std::wstring, SceneCreateFn> g;
-        return g;
-    }
-
-    inline std::vector<std::unique_ptr<Object>>& OwnedObjects()
-    {
-        static std::vector<std::unique_ptr<Object>> g;
-        return g;
-    }
-
-    inline std::vector<std::unique_ptr<Resource>>& OwnedResources()
-    {
-        static std::vector<std::unique_ptr<Resource>> g;
         return g;
     }
 
@@ -318,6 +217,13 @@ namespace LinuxXui
     {
         static bool g = false;
         return g;
+    }
+
+    inline std::uint64_t NowMs()
+    {
+        using namespace std::chrono;
+        return (std::uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
     }
 
     inline std::wstring NormalizePath(std::wstring in)
@@ -348,24 +254,111 @@ namespace LinuxXui
         return in;
     }
 
-    inline std::uint64_t NowMs()
+    inline std::vector<std::uint8_t> ReadWholeFile(const std::wstring& locator)
     {
-        using namespace std::chrono;
-        return (std::uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count();
+        std::wstring path = NormalizePath(locator);
+        std::ifstream f(std::filesystem::path(path), std::ios::binary);
+        if (!f)
+            return std::vector<std::uint8_t>();
+
+        f.seekg(0, std::ios::end);
+        std::streamsize size = f.tellg();
+        f.seekg(0, std::ios::beg);
+
+        if (size < 0)
+            return std::vector<std::uint8_t>();
+
+        std::vector<std::uint8_t> out((size_t)size);
+        if (size > 0)
+            f.read(reinterpret_cast<char*>(out.data()), size);
+        return out;
     }
 
-    inline Object* MakeObject(ObjectKind kind, const std::wstring& id = L"")
+    inline SceneCreateFn FindSceneFactory(const std::wstring& sceneFile)
     {
-        std::unique_ptr<Object> obj(new Object());
+        auto it = SceneRegistry().find(sceneFile);
+        if (it != SceneRegistry().end())
+            return it->second;
+
+        std::wstring lower = sceneFile;
+        std::transform(lower.begin(), lower.end(), lower.begin(), towlower);
+
+        for (auto it2 = SceneRegistry().begin(); it2 != SceneRegistry().end(); ++it2)
+        {
+            std::wstring key = it2->first;
+            std::transform(key.begin(), key.end(), key.begin(), towlower);
+            if (key == lower)
+                return it2->second;
+        }
+
+        return SceneCreateFn();
+    }
+}
+
+// Complete the forward-declared type from extraX64.h
+struct _XUIOBJ
+{
+    LinuxXui::ObjectKind kind;
+    std::wstring id;
+    std::wstring text;
+    std::wstring locator;
+    std::wstring sceneFile;
+    bool visible;
+    bool enabled;
+    bool isScene;
+    bool stayVisible;
+
+    float width;
+    float height;
+
+    D3DXVECTOR3 position;
+    D3DXVECTOR3 scale;
+    D3DXVECTOR3 pivot;
+
+    HXUIOBJ parent;
+    HXUIOBJ backScene;
+    std::vector<HXUIOBJ> children;
+
+    std::unique_ptr<LinuxXui::SceneHost> host;
+    void* userData;
+
+    _XUIOBJ()
+        : kind(LinuxXui::ObjectKind::Generic),
+          visible(true),
+          enabled(true),
+          isScene(false),
+          stayVisible(false),
+          width(0.0f),
+          height(0.0f),
+          position(0.0f, 0.0f, 0.0f),
+          scale(1.0f, 1.0f, 1.0f),
+          pivot(0.0f, 0.0f, 0.0f),
+          parent(NULL),
+          backScene(NULL),
+          userData(NULL)
+    {
+    }
+};
+
+namespace LinuxXui
+{
+    inline std::vector<std::unique_ptr<_XUIOBJ>>& OwnedObjects()
+    {
+        static std::vector<std::unique_ptr<_XUIOBJ>> g;
+        return g;
+    }
+
+    inline HXUIOBJ MakeObject(ObjectKind kind, const std::wstring& id = L"")
+    {
+        std::unique_ptr<_XUIOBJ> obj(new _XUIOBJ());
         obj->kind = kind;
         obj->id = id;
-        Object* raw = obj.get();
+        HXUIOBJ raw = obj.get();
         OwnedObjects().push_back(std::move(obj));
         return raw;
     }
 
-    inline void AddChild(Object* parent, Object* child)
+    inline void AddChild(HXUIOBJ parent, HXUIOBJ child)
     {
         if (!parent || !child)
             return;
@@ -373,7 +366,7 @@ namespace LinuxXui
         parent->children.push_back(child);
     }
 
-    inline Object* FindChildRecursive(Object* root, const std::wstring& id)
+    inline HXUIOBJ FindChildRecursive(HXUIOBJ root, const std::wstring& id)
     {
         if (!root)
             return NULL;
@@ -382,14 +375,14 @@ namespace LinuxXui
 
         for (size_t i = 0; i < root->children.size(); ++i)
         {
-            Object* found = FindChildRecursive(root->children[i], id);
+            HXUIOBJ found = FindChildRecursive(root->children[i], id);
             if (found)
                 return found;
         }
         return NULL;
     }
 
-    inline void DestroyRecursive(Object* root)
+    inline void DestroyRecursive(HXUIOBJ root)
     {
         if (!root)
             return;
@@ -429,26 +422,6 @@ namespace LinuxXui
         return S_OK;
     }
 
-    inline SceneCreateFn FindSceneFactory(const std::wstring& sceneFile)
-    {
-        auto it = SceneRegistry().find(sceneFile);
-        if (it != SceneRegistry().end())
-            return it->second;
-
-        std::wstring lower = sceneFile;
-        std::transform(lower.begin(), lower.end(), lower.begin(), towlower);
-
-        for (auto it2 = SceneRegistry().begin(); it2 != SceneRegistry().end(); ++it2)
-        {
-            std::wstring key = it2->first;
-            std::transform(key.begin(), key.end(), key.begin(), towlower);
-            if (key == lower)
-                return it2->second;
-        }
-
-        return SceneCreateFn();
-    }
-
     inline HRESULT Initialize()
     {
         Initialized() = true;
@@ -458,7 +431,6 @@ namespace LinuxXui
     inline void Reset()
     {
         Timers().clear();
-        OwnedResources().clear();
         OwnedObjects().clear();
         SceneRegistry().clear();
         Initialized() = false;
@@ -497,29 +469,9 @@ namespace LinuxXui
         return S_OK;
     }
 
-    inline std::vector<std::uint8_t> ReadWholeFile(const std::wstring& locator)
+    inline HXUIOBJ CreateGenericSceneObject(const std::wstring& sceneFile, void* initData)
     {
-        std::wstring path = NormalizePath(locator);
-        std::ifstream f(std::filesystem::path(path), std::ios::binary);
-        if (!f)
-            return std::vector<std::uint8_t>();
-
-        f.seekg(0, std::ios::end);
-        std::streamsize size = f.tellg();
-        f.seekg(0, std::ios::beg);
-
-        if (size < 0)
-            return std::vector<std::uint8_t>();
-
-        std::vector<std::uint8_t> out((size_t)size);
-        if (size > 0)
-            f.read(reinterpret_cast<char*>(out.data()), size);
-        return out;
-    }
-
-    inline Object* CreateGenericSceneObject(const std::wstring& sceneFile, void* initData)
-    {
-        Object* scene = MakeObject(ObjectKind::Scene, sceneFile);
+        HXUIOBJ scene = MakeObject(ObjectKind::Scene, sceneFile);
         scene->isScene = true;
         scene->sceneFile = sceneFile;
         scene->width = 1280.0f;
@@ -531,7 +483,7 @@ namespace LinuxXui
             for (int i = 0; i < XUSER_MAX_COUNT; ++i)
             {
                 std::wstring baseId = L"BasePlayer" + std::to_wstring(i);
-                Object* basePlayer = MakeObject(ObjectKind::Container, baseId);
+                HXUIOBJ basePlayer = MakeObject(ObjectKind::Container, baseId);
                 AddChild(scene, basePlayer);
 
                 AddChild(basePlayer, MakeObject(ObjectKind::Container, L"XuiSceneContainer"));
@@ -553,7 +505,7 @@ namespace LinuxXui
             return E_POINTER;
 
         std::wstring fullPath = locatorBase + sceneFile;
-        Object* scene = NULL;
+        HXUIOBJ scene = NULL;
 
         SceneCreateFn fn = FindSceneFactory(sceneFile);
         if (fn)
@@ -588,9 +540,6 @@ namespace LinuxXui
         return S_OK;
     }
 }
-
-using HXUIOBJ = LinuxXui::HXUIOBJ;
-using HXUIRESOURCE = LinuxXui::Resource*;
 
 inline HRESULT XuiRegisterSceneClass(LPCWSTR sceneFile, LinuxXui::SceneCreateFn fn)
 {
@@ -908,30 +857,6 @@ inline HRESULT XuiResourceLoadAllNoLoc(LPCWSTR locator, BYTE** outBytes, UINT* o
     *outBytes = buf;
     *outSize = (UINT)data.size();
     return S_OK;
-}
-
-inline HRESULT XuiResourceOpenNoLoc(LPCWSTR locator, HXUIRESOURCE* outRes, BOOL* isMemoryResource)
-{
-    if (!locator || !outRes)
-        return E_INVALIDARG;
-
-    std::unique_ptr<LinuxXui::Resource> res(new LinuxXui::Resource());
-    res->locator = locator;
-    res->data = LinuxXui::ReadWholeFile(locator);
-    if (res->data.empty())
-        return E_FAIL;
-
-    if (isMemoryResource)
-        *isMemoryResource = TRUE;
-
-    LinuxXui::Resource* raw = res.get();
-    LinuxXui::OwnedResources().push_back(std::move(res));
-    *outRes = raw;
-    return S_OK;
-}
-
-inline void XuiResourceClose(HXUIRESOURCE)
-{
 }
 
 inline HRESULT XuiTextPresenterMeasureText(HXUIOBJ, LPCWSTR text, XUIRect* outRect)
