@@ -6,34 +6,17 @@
 #include <cassert>
 #include <chrono>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <cwchar>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <list>
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
-
-#ifndef _WIN32
-using BYTE = unsigned char;
-using WORD = std::uint16_t;
-using DWORD = std::uint32_t;
-using UINT = unsigned int;
-using ULONG_PTR = std::uintptr_t;
-using BOOL = int;
-using WCHAR = wchar_t;
-using CHAR = char;
-using LPCSTR = const char*;
-using LPCWSTR = const wchar_t*;
-using LPVOID = void*;
-using HANDLE = void*;
-#endif
 
 #ifndef TRUE
 #define TRUE 1
@@ -91,10 +74,6 @@ using HANDLE = void*;
 #define XUSER_INDEX_NONE 0xFE
 #endif
 
-#ifndef MAXULONG_PTR
-#define MAXULONG_PTR ((ULONG_PTR)~(ULONG_PTR)0)
-#endif
-
 #ifndef XUI_TRANSITION_TO
 #define XUI_TRANSITION_TO 1
 #endif
@@ -106,6 +85,10 @@ using HANDLE = void*;
 #endif
 #ifndef XUI_DISCARD_FONTS
 #define XUI_DISCARD_FONTS 1
+#endif
+
+#ifndef MAXULONG_PTR
+#define MAXULONG_PTR ((ULONG_PTR)~(ULONG_PTR)0)
 #endif
 
 struct D3DXVECTOR3
@@ -207,7 +190,6 @@ namespace LinuxXui
     {
         Generic,
         Scene,
-        Control,
         Container,
         Text,
         Button,
@@ -238,11 +220,9 @@ namespace LinuxXui
         std::wstring id;
         std::wstring text;
         std::wstring locator;
-        std::wstring className;
         std::wstring sceneFile;
         bool visible;
         bool enabled;
-        bool focusable;
         bool isScene;
         bool stayVisible;
 
@@ -264,7 +244,6 @@ namespace LinuxXui
             : kind(ObjectKind::Generic),
               visible(true),
               enabled(true),
-              focusable(false),
               isScene(false),
               stayVisible(false),
               width(0.0f),
@@ -372,8 +351,8 @@ namespace LinuxXui
     inline std::uint64_t NowMs()
     {
         using namespace std::chrono;
-        return (std::uint64_t)duration_cast<milliseconds>(
-            steady_clock::now().time_since_epoch()).count();
+        return (std::uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
     }
 
     inline Object* MakeObject(ObjectKind kind, const std::wstring& id = L"")
@@ -452,7 +431,7 @@ namespace LinuxXui
 
     inline SceneCreateFn FindSceneFactory(const std::wstring& sceneFile)
     {
-        std::unordered_map<std::wstring, SceneCreateFn>::iterator it = SceneRegistry().find(sceneFile);
+        auto it = SceneRegistry().find(sceneFile);
         if (it != SceneRegistry().end())
             return it->second;
 
@@ -615,15 +594,11 @@ using HXUIRESOURCE = LinuxXui::Resource*;
 
 inline HRESULT XuiRegisterSceneClass(LPCWSTR sceneFile, LinuxXui::SceneCreateFn fn)
 {
-    if (!sceneFile)
-        return E_INVALIDARG;
     return LinuxXui::RegisterSceneClass(sceneFile, fn);
 }
 
 inline HRESULT XuiUnregisterSceneClass(LPCWSTR sceneFile)
 {
-    if (!sceneFile)
-        return E_INVALIDARG;
     return LinuxXui::UnregisterSceneClass(sceneFile);
 }
 
@@ -721,7 +696,6 @@ inline HRESULT XuiElementGetChildById(HXUIOBJ parent, LPCWSTR id, HXUIOBJ* outOb
 {
     if (!parent || !id || !outObj)
         return E_INVALIDARG;
-
     *outObj = LinuxXui::FindChildRecursive(parent, id);
     return (*outObj != NULL) ? S_OK : E_FAIL;
 }
@@ -903,40 +877,13 @@ inline HRESULT XuiSetLocale(LPCWSTR locale)
     return S_OK;
 }
 
-inline HRESULT XuiHtmlRegister()
-{
-    return S_OK;
-}
-
-inline HRESULT XuiHtmlUnregister()
-{
-    return S_OK;
-}
-
-inline HRESULT XuiSoundXACTRegister()
-{
-    return S_OK;
-}
-
-inline HRESULT XuiSoundXAudioRegister()
-{
-    return S_OK;
-}
-
-inline HRESULT LoadSkin(LPCWSTR)
-{
-    return S_OK;
-}
-
-inline HRESULT RegisterDefaultTypeface(LPCWSTR, LPCWSTR, LPCWSTR = NULL, float = 0.0f, LPCWSTR = NULL)
-{
-    return S_OK;
-}
-
-inline HRESULT XuiRegisterTypeface(const TypefaceDescriptor*, BOOL)
-{
-    return S_OK;
-}
+inline HRESULT XuiHtmlRegister() { return S_OK; }
+inline HRESULT XuiHtmlUnregister() { return S_OK; }
+inline HRESULT XuiSoundXACTRegister() { return S_OK; }
+inline HRESULT XuiSoundXAudioRegister() { return S_OK; }
+inline HRESULT LoadSkin(LPCWSTR) { return S_OK; }
+inline HRESULT RegisterDefaultTypeface(LPCWSTR, LPCWSTR, LPCWSTR = NULL, float = 0.0f, LPCWSTR = NULL) { return S_OK; }
+inline HRESULT XuiRegisterTypeface(const TypefaceDescriptor*, BOOL) { return S_OK; }
 
 inline void XuiFree(void* p)
 {
@@ -1006,44 +953,4 @@ inline HRESULT XuiTextPresenterMeasureText(HXUIOBJ, LPCWSTR text, XUIRect* outRe
 inline HXUIOBJ XuiControlGetNavigation(HXUIOBJ source, int, BOOL, BOOL)
 {
     return source;
-}
-
-class LinuxXuiSceneBase : public LinuxXui::SceneHost
-{
-public:
-    explicit LinuxXuiSceneBase(HXUIOBJ hObj) : m_hObj(hObj) {}
-    virtual ~LinuxXuiSceneBase() {}
-
-    HXUIOBJ GetHandle() const { return m_hObj; }
-
-protected:
-    HXUIOBJ m_hObj;
-};
-
-#define DECLARE_LINUX_XUI_SCENE(SceneType, SceneFileWide)                          \
-public:                                                                            \
-    static HRESULT Register()                                                      \
-    {                                                                              \
-        return XuiRegisterSceneClass(SceneFileWide,                                \
-            [](HXUIOBJ hObj) -> LinuxXui::SceneHost* { return new SceneType(hObj); }); \
-    }                                                                              \
-    static HRESULT Unregister()                                                    \
-    {                                                                              \
-        return XuiUnregisterSceneClass(SceneFileWide);                             \
-    }                                                                              \
-private:
-
-inline HRESULT LinuxXui_RunFrame()
-{
-    return LinuxXui::RunFrame();
-}
-
-inline HRESULT LinuxXui_Initialize()
-{
-    return LinuxXui::Initialize();
-}
-
-inline void LinuxXui_Reset()
-{
-    LinuxXui::Reset();
 }
