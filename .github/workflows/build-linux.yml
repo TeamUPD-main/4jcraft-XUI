@@ -21,6 +21,7 @@ on:
       - '**/CMakeLists.txt'
       - 'CMakeLists.txt'
       - '.github/workflows/build-linux.yml'
+  workflow_dispatch:
 
 jobs:
   build-linux:
