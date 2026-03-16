@@ -97,6 +97,25 @@ struct XUIRect
     XUIRect() : left(0), top(0), right(0), bottom(0) {}
 };
 
+#ifndef LINUX_XUI_SHIM_D3DXMATRIX_DEFINED
+#define LINUX_XUI_SHIM_D3DXMATRIX_DEFINED
+struct D3DXMATRIX
+{
+    float _11, _12, _13, _14;
+    float _21, _22, _23, _24;
+    float _31, _32, _33, _34;
+    float _41, _42, _43, _44;
+
+    D3DXMATRIX()
+        : _11(1), _12(0), _13(0), _14(0),
+          _21(0), _22(1), _23(0), _24(0),
+          _31(0), _32(0), _33(1), _34(0),
+          _41(0), _42(0), _43(0), _44(1)
+    {
+    }
+};
+#endif
+
 struct XUIMessageInit
 {
     void* pvInitData;
