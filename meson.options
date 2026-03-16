@@ -10,5 +10,5 @@ option('enable_vsync',
 
 option('enable_shiggy', 
   type : 'boolean', 
-  value : true, 
+  value : false, 
   description : 'Toggles shimmed PS4 Iggy binaries and UI for x86_64 Linux.')
